@@ -1,4 +1,4 @@
-const { searchInstagramByCaption, scrapeInstagramPostDetails, fetchProfileFollowers } = require('./apify');
+const { batchSearchInstagramByCaption, scrapeInstagramPostDetails, fetchProfileFollowers } = require('./apify');
 const { sendResults } = require('./telegram');
 const { isCreatorListPost } = require('./classifier');
 const KEYWORDS = require('./keywords');
@@ -58,27 +58,11 @@ async function runMonitor({ windowStart, windowEnd, apifyToken, anthropicApiKey,
   console.log(`Date window: ${dateRangeLabel}`);
   console.log(`Keywords: ${keywords.length}${keywordsOverride ? ' (test override)' : ''}`);
 
-  // ── Stage 1a: Google search → collect Instagram post URLs ───────────────────
-  console.log('\n[Stage 1] Searching Google for Instagram caption matches...');
-  const urlToKeyword = new Map();
-
-  for (let i = 0; i < keywords.length; i++) {
-    const keyword = keywords[i];
-    process.stdout.write(`  [${i + 1}/${keywords.length}] "${keyword}" ... `);
-    const urls = await searchInstagramByCaption(keyword, windowStart, apifyToken);
-    let newCount = 0;
-    for (const url of urls) {
-      if (!urlToKeyword.has(url)) {
-        urlToKeyword.set(url, keyword);
-        newCount++;
-      }
-    }
-    console.log(`${urls.length} URLs found, ${newCount} new`);
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-
+  // ── Stage 1a: Single batched Google search for all keywords ─────────────────
+  console.log('\n[Stage 1] Batch-searching Google for Instagram caption matches...');
+  const urlToKeyword = await batchSearchInstagramByCaption(keywords, windowStart, apifyToken);
   const allUrls = Array.from(urlToKeyword.keys());
-  console.log(`\n[Stage 1] Total unique Instagram URLs: ${allUrls.length}`);
+  console.log(`[Stage 1] Found ${allUrls.length} unique Instagram URLs across ${keywords.length} keywords`);
 
   if (allUrls.length === 0) {
     await sendResults(botToken, chatId, [], dateRangeLabel);

@@ -2,13 +2,13 @@ const axios = require('axios');
 
 const APIFY_BASE = 'https://api.apify.com/v2';
 
-async function runActor(actorId, input, apiToken) {
+async function runActor(actorId, input, apiToken, waitSeconds = 300) {
   const runRes = await axios.post(
-    `${APIFY_BASE}/acts/${actorId}/runs?waitForFinish=300`,
+    `${APIFY_BASE}/acts/${actorId}/runs?waitForFinish=${waitSeconds}`,
     input,
     {
       headers: { Authorization: `Bearer ${apiToken}` },
-      timeout: 360_000,
+      timeout: (waitSeconds + 60) * 1000,
     }
   );
   const datasetId = runRes.data.data.defaultDatasetId;
@@ -27,41 +27,57 @@ async function fetchDataset(datasetId, apiToken) {
 }
 
 /**
- * Search Google for Instagram posts whose captions contain the keyword phrase.
- * Uses site:instagram.com/p/ + quoted phrase + after: date operator.
- * Returns an array of normalised Instagram post URLs.
+ * Search Google for all keywords in a single Apify actor run.
+ * Returns a Map of { instagram_url -> matched_keyword }.
  */
-async function searchInstagramByCaption(keyword, windowStart, apiToken) {
+async function batchSearchInstagramByCaption(keywords, windowStart, apiToken) {
   const dateStr = windowStart.toISOString().slice(0, 10);
-  const query = `site:instagram.com/p/ "${keyword}" after:${dateStr}`;
+
+  // All queries in one newline-separated string — one actor run instead of N
+  const queries = keywords
+    .map((k) => `site:instagram.com/p/ "${k}" after:${dateStr}`)
+    .join('\n');
 
   const input = {
-    queries: query,
-    resultsPerPage: 50,
-    maxPagesPerQuery: 2,
+    queries,
+    resultsPerPage: 15,
+    maxPagesPerQuery: 1,
     languageCode: 'en',
     countryCode: 'us',
   };
 
   try {
-    const { datasetId } = await runActor('apify~google-search-scraper', input, apiToken);
+    const { datasetId } = await runActor(
+      'apify~google-search-scraper',
+      input,
+      apiToken,
+      300
+    );
     const pages = await fetchDataset(datasetId, apiToken);
 
-    const postUrls = [];
+    const urlToKeyword = new Map();
+
     for (const page of pages) {
-      const organicResults = page.organicResults || [];
-      for (const item of organicResults) {
+      // searchQuery is an object: { term: "site:instagram.com/p/ \"KEYWORD\" after:DATE", ... }
+      const queryTerm =
+        (typeof page.searchQuery === 'string' ? page.searchQuery : page.searchQuery?.term) || '';
+      const keywordMatch = queryTerm.match(/"([^"]+)"/);
+      const keyword = keywordMatch ? keywordMatch[1] : '';
+
+      for (const item of page.organicResults || []) {
         const raw = item.url || item.link || '';
         const match = raw.match(/instagram\.com\/p\/([A-Za-z0-9_-]+)/);
         if (match) {
-          postUrls.push(`https://www.instagram.com/p/${match[1]}/`);
+          const url = `https://www.instagram.com/p/${match[1]}/`;
+          if (!urlToKeyword.has(url)) urlToKeyword.set(url, keyword);
         }
       }
     }
-    return postUrls;
+
+    return urlToKeyword;
   } catch (err) {
-    console.error(`[Apify] Google search error for keyword "${keyword}": ${err.message}`);
-    return [];
+    console.error(`[Apify] Batch Google search error: ${err.message}`);
+    return new Map();
   }
 }
 
@@ -130,4 +146,4 @@ async function fetchProfileFollowers(usernames, apiToken) {
   }
 }
 
-module.exports = { searchInstagramByCaption, scrapeInstagramPostDetails, fetchProfileFollowers };
+module.exports = { batchSearchInstagramByCaption, scrapeInstagramPostDetails, fetchProfileFollowers };
