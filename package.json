@@ -1,0 +1,19 @@
+{
+  "name": "instagram-ai-monitor",
+  "version": "1.0.0",
+  "description": "Monitors Instagram for posts mentioning AI creators/influencers and sends results to Telegram",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "run-now": "node run-now.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
