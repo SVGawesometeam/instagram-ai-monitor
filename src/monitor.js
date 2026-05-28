@@ -88,16 +88,24 @@ async function runMonitor({ windowStart, windowEnd, apifyToken, anthropicApiKey,
       ? `https://www.instagram.com/p/${shortCode}/`
       : null;
 
-    const keyword =
+    // Try URL lookup first, then fall back to caption scan — handles /reel/ vs /p/ URL mismatches
+    const shortCode2 = raw.shortCode || raw.shortcode || normUrl?.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] || '';
+    const urlKeyword =
       urlToKeyword.get(normUrl) ||
+      urlToKeyword.get(normUrl?.replace(/\/?$/, '/')) ||
       urlToKeyword.get(normUrl?.replace(/\/$/, '')) ||
-      '';
+      (shortCode2 ? [...urlToKeyword.entries()].find(([u]) => u.includes(shortCode2))?.[1] : undefined);
+
+    const caption = raw.caption || raw.alt || '';
+    const captionKeyword = keywords.find((k) => caption.toLowerCase().includes(k.toLowerCase()));
+
+    const keyword = urlKeyword || captionKeyword || '';
 
     const post = normalisePost(raw, keyword);
     if (!post) continue;
 
     if (post.postDate < windowStart || post.postDate > windowEnd) { droppedDate++; continue; }
-    if (!captionContainsKeyword(post.caption, keyword)) { droppedKeyword++; continue; }
+    if (!keyword || !captionContainsKeyword(post.caption, keyword)) { droppedKeyword++; continue; }
 
     const fp = captionFingerprint(post.caption);
     if (captionSeen.has(fp)) { droppedDupe++; continue; }

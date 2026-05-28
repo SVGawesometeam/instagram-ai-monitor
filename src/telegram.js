@@ -15,7 +15,8 @@ async function sendTelegramMessage(botToken, chatId, text) {
       { timeout: 30_000 }
     );
   } catch (err) {
-    console.error('[Telegram] Failed to send message:', err.message);
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    console.error('[Telegram] Failed to send message:', detail);
     console.error('[Telegram] Message content that failed to send:\n', text);
   }
 }
